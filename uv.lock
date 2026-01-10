@@ -630,7 +630,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.1" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
     { name = "twelvelabs", specifier = ">=1.1.0" },
-,
 ]
 
 [[package]]
