@@ -15,7 +15,8 @@ from PIL import Image, ImageTk
 
 # Media/Input Dependencies
 import imageio.v3 as iio
-from pynput import mouse, keyboard
+# UPDATED: Only importing keyboard, removed mouse
+from pynput import keyboard
 
 # ─────────────────────────────────────────────────────────
 # 1. THE VISUAL WINDOW SELECTOR (GUI)
@@ -174,8 +175,10 @@ class IdleScreenRecorder:
         self.fps = fps
         self._last_activity_time = time.time()
         self._activity_lock = threading.Lock()
-        self._mouse_listener = None
+        
+        # UPDATED: Removed _mouse_listener
         self._key_listener = None
+        
         self._frames = []
         self._video_buffer = None
         self._recording_duration = 0.0
@@ -187,17 +190,12 @@ class IdleScreenRecorder:
             self._last_activity_time = time.time()
 
     def _start_listeners(self):
-        self._mouse_listener = mouse.Listener(
-            on_move=lambda *a: self._mark_activity(),
-            on_click=lambda *a: self._mark_activity(),
-            on_scroll=lambda *a: self._mark_activity()
-        )
+        # UPDATED: Only listening for keyboard presses
         self._key_listener = keyboard.Listener(on_press=lambda *a: self._mark_activity())
-        self._mouse_listener.start()
         self._key_listener.start()
 
     def _stop_listeners(self):
-        if self._mouse_listener: self._mouse_listener.stop()
+        # UPDATED: Removed mouse stop
         if self._key_listener: self._key_listener.stop()
 
     def _capture_frame(self):
@@ -232,11 +230,9 @@ class IdleScreenRecorder:
 
     def record_until_idle(self):
         # 1. LAUNCH GUI IN SUBPROCESS (Fixes macOS threading crash)
-        # We run this same file with a special flag
         print("[Recorder] Launching GUI Selector...")
         try:
             cmd = [sys.executable, os.path.abspath(__file__), "--select-window"]
-            # Capture stdout for the ID, stderr for logs
             result = subprocess.check_output(cmd, stderr=sys.stderr).decode().strip()
             
             if not result or "None" in result:
@@ -260,7 +256,7 @@ class IdleScreenRecorder:
         self._start_listeners()
         
         start_time = time.time()
-        print(f"[Recorder] Recording... (Stop by waiting {self.idle_seconds}s)")
+        print(f"[Recorder] Recording... (Stop by not typing for {self.idle_seconds}s)")
 
         try:
             while True:
@@ -276,7 +272,7 @@ class IdleScreenRecorder:
                 
                 if idle_time >= self.idle_seconds:
                     self._stopped_reason = "idle"
-                    print("[Recorder] Idle detected. Stopping.")
+                    print("[Recorder] Keyboard idle detected. Stopping.")
                     break
 
                 if (now - start_time) >= self.max_duration:
@@ -365,14 +361,15 @@ engine = VideoEngine()
 # 4. SUBPROCESS ENTRY POINT (Required for GUI)
 # ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # If run with this flag, it launches the GUI, prints ID to stdout, then exits.
     if "--select-window" in sys.argv:
         try:
             selector = WindowSelectorGUI()
             sid = selector.select()
             if sid:
-                print(sid) # ONLY print ID to stdout
+                print(sid)
             else:
                 print("None")
         except KeyboardInterrupt:
             print("None")
+
+            
