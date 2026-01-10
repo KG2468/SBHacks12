@@ -10,22 +10,67 @@ import {
 let client: LanguageClient | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('SBHacks12 extension is now active!');
 
-    // Register command to start the server
-    const startServerCommand = vscode.commands.registerCommand('sbhacks12.startServer', async () => {
-        await startLanguageServer(context);
-    });
 
-    // Register command to stop the server
-    const stopServerCommand = vscode.commands.registerCommand('sbhacks12.stopServer', async () => {
-        await stopLanguageServer();
-    });
+    const didChangeEmitter = new vscode.EventEmitter<void>();
 
-    context.subscriptions.push(startServerCommand, stopServerCommand);
+    context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('exampleProvider', {
+        onDidChangeMcpServerDefinitions: didChangeEmitter.event,
+        provideMcpServerDefinitions: async () => {
+            let servers: vscode.McpServerDefinition[] = [];
 
-    // Auto-start the language server
-    startLanguageServer(context);
+        // Example of a simple stdio server definition
+        servers.push(new vscode.McpStdioServerDefinition(
+            'myServer',
+            'python',
+            ['server/server.py'],
+            {
+                TL_API_KEY: '',
+                TL_ID: ''
+            }
+        ));
+
+            return servers;
+        },
+        resolveMcpServerDefinition: async (server: vscode.McpStdioServerDefinition) => {
+
+            if (server.label === 'myServer') {
+                // Get the API key from the user, e.g. using vscode.window.showInputBox
+                // Update the server definition with the API key
+                const api_key = await vscode.window.showInputBox({ prompt: 'Enter your TwelveLabs API key' });
+                const tl_id = await vscode.window.showInputBox({ prompt: 'Enter your TwelveLabs ID' });
+                server.env = {
+                    TL_API_KEY: api_key || '',
+                    TL_ID: tl_id || ''
+                };
+            }
+
+            // Return undefined to indicate that the server should not be started or throw an error
+            // If there is a pending tool call, the editor will cancel it and return an error message
+            // to the language model.
+            return server;
+        }
+    }));
+
+
+
+
+    // console.log('SBHacks12 extension is now active!');
+
+    // // Register command to start the server
+    // const startServerCommand = vscode.commands.registerCommand('sbhacks12.startServer', async () => {
+    //     await startLanguageServer(context);
+    // });
+
+    // // Register command to stop the server
+    // const stopServerCommand = vscode.commands.registerCommand('sbhacks12.stopServer', async () => {
+    //     await stopLanguageServer();
+    // });
+
+    // context.subscriptions.push(startServerCommand, stopServerCommand);
+
+    // // Auto-start the language server
+    // startLanguageServer(context);
 }
 
 async function startLanguageServer(context: vscode.ExtensionContext) {
