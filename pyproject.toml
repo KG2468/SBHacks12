@@ -1,9 +1,14 @@
 [project]
 name = "sbhacks12"
 version = "0.1.0"
-description = "Add your description here"
+description = "VS Code extension with pygls Python language server"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "twelvelabs>=1.1.0",
+    "pygls>=1.3.0",
+    "lsprotocol>=2023.0.0",
 ]
+
+[project.scripts]
+sbhacks12-server = "server.server:main"
