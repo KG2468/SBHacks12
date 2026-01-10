@@ -10,7 +10,13 @@ dependencies = [
     "numpy>=2.4.1",
     "opencv-python>=4.11.0.86",
     "twelvelabs>=1.1.0",
+    "pygls>=1.3.0",
+    "lsprotocol>=2023.0.0",
 ]
 
+[tool.uv.workspace]
+members = [
+    "mcp-server-demo",
+]
 [project.scripts]
 sbhacks12-server = "server.server:main"
