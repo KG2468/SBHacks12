@@ -5,5 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "mcp>=1.25.0",
+    "mss>=10.1.0",
+    "numpy>=2.4.1",
+    "opencv-python>=4.11.0.86",
     "twelvelabs>=1.1.0",
+]
+
+[tool.uv.workspace]
+members = [
+    "mcp-server-demo",
 ]
