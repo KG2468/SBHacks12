@@ -184,6 +184,9 @@ class IdleScreenRecorder:
         self._key_listener = None
         self._mouse_listener = None
         
+        # Visual Activity Tracking
+        self.prev_gray_frame = None
+        
         self._frames = []
         self._video_buffer = None
         self._recording_duration = 0.0
@@ -191,12 +194,12 @@ class IdleScreenRecorder:
         self.target_window_id = None
 
     def _mark_activity(self):
-        """Updates the timer when KEYBOARD activity happens."""
+        """Updates the timer when activity happens."""
         with self._activity_lock:
             self._last_activity_time = time.time()
 
     def _on_mouse_click(self, x, y, button, pressed):
-        """Changes cursor color but DOES NOT reset idle timer."""
+        """Changes cursor color."""
         if not pressed:
             self.cursor_color = "white"
         else:
@@ -316,8 +319,11 @@ class IdleScreenRecorder:
         self._mark_activity()
         self._start_listeners()
         
+        # Reset visual tracker
+        self.prev_gray_frame = None
+        
         start_time = time.time()
-        print(f"[Recorder] Recording... (Stop by not typing for {self.idle_seconds}s)")
+        print(f"[Recorder] Recording... (Stop by not acting for {self.idle_seconds}s)")
 
         try:
             while True:
@@ -327,13 +333,37 @@ class IdleScreenRecorder:
                 if frame is not None:
                     self._frames.append(frame)
 
+                    # ──────────────────────────────────────────────
+                    # VISUAL ACTIVITY DETECTION (SCROLLING CHECK)
+                    # ──────────────────────────────────────────────
+                    # 1. Convert to grayscale (mean of RGB) to simplify
+                    curr_gray = frame.mean(axis=2)
+                    
+                    if self.prev_gray_frame is not None:
+                        # 2. Calculate pixel difference
+                        diff = np.abs(curr_gray - self.prev_gray_frame)
+                        
+                        # 3. Check for meaningful change (>15 value shift)
+                        # This ignores tiny compression noise
+                        changed_mask = diff > 15
+                        
+                        # 4. Calculate Ratio (0.0 to 1.0)
+                        change_ratio = np.mean(changed_mask)
+                        
+                        # 5. Threshold: If > 0.5% of pixels changed, it's activity
+                        if change_ratio > 0.005: 
+                            self._mark_activity()
+                    
+                    self.prev_gray_frame = curr_gray
+                    # ──────────────────────────────────────────────
+
                 now = time.time()
                 with self._activity_lock:
                     idle_time = now - self._last_activity_time
                 
                 if idle_time >= self.idle_seconds:
                     self._stopped_reason = "idle"
-                    print("[Recorder] Keyboard idle detected. Stopping.")
+                    print("[Recorder] Idle detected (No keys & No pixel changes). Stopping.")
                     break
 
                 if (now - start_time) >= self.max_duration:
