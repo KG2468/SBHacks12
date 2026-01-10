@@ -11,12 +11,12 @@ import subprocess
 # GUI Dependencies
 import tkinter as tk
 from tkinter import Canvas, Frame, Scrollbar
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 
 # Media/Input Dependencies
 import imageio.v3 as iio
-# UPDATED: Only importing keyboard, removed mouse
-from pynput import keyboard
+from pynput import keyboard, mouse
+from pynput.mouse import Controller as MouseController
 
 # ─────────────────────────────────────────────────────────
 # 1. THE VISUAL WINDOW SELECTOR (GUI)
@@ -176,8 +176,16 @@ class IdleScreenRecorder:
         self._last_activity_time = time.time()
         self._activity_lock = threading.Lock()
         
-        # UPDATED: Removed _mouse_listener
+        # Tools for cursor visualization
+        self.mouse_controller = MouseController()
+        # Default cursor color
+        self.cursor_color = "white"
+
         self._key_listener = None
+        self._mouse_listener = None
+        
+        # Visual Activity Tracking
+        self.prev_gray_frame = None
         
         self._frames = []
         self._video_buffer = None
@@ -186,17 +194,71 @@ class IdleScreenRecorder:
         self.target_window_id = None
 
     def _mark_activity(self):
+        """Updates the timer when activity happens."""
         with self._activity_lock:
             self._last_activity_time = time.time()
 
+    def _on_mouse_click(self, x, y, button, pressed):
+        """Changes cursor color."""
+        if not pressed:
+            self.cursor_color = "white"
+        else:
+            if button == mouse.Button.left:
+                self.cursor_color = "#00FF00" # Green
+            elif button == mouse.Button.right:
+                self.cursor_color = "#FF0000" # Red
+            else:
+                self.cursor_color = "blue"
+
     def _start_listeners(self):
-        # UPDATED: Only listening for keyboard presses
+        # 1. Keyboard: Resets idle timer
         self._key_listener = keyboard.Listener(on_press=lambda *a: self._mark_activity())
         self._key_listener.start()
 
+        # 2. Mouse: Only updates color (no idle reset)
+        self._mouse_listener = mouse.Listener(on_click=self._on_mouse_click)
+        self._mouse_listener.start()
+
     def _stop_listeners(self):
-        # UPDATED: Removed mouse stop
         if self._key_listener: self._key_listener.stop()
+        if self._mouse_listener: self._mouse_listener.stop()
+
+    def _draw_cursor_on_frame(self, img_rgb, width, height):
+        try:
+            # 1. Get Window Position
+            win_info_list = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionIncludingWindow, self.target_window_id)
+            if not win_info_list: return img_rgb
+            bounds = win_info_list[0].get('kCGWindowBounds', {})
+            win_x = bounds.get('X', 0)
+            win_y = bounds.get('Y', 0)
+
+            # 2. Get Mouse Position
+            gx, gy = self.mouse_controller.position
+            rx = int(gx - win_x)
+            ry = int(gy - win_y)
+
+            # 3. Draw Triangle if inside
+            if 0 <= rx < width and 0 <= ry < height:
+                pil_img = Image.fromarray(img_rgb)
+                draw = ImageDraw.Draw(pil_img)
+                
+                # Triangle Geometry
+                triangle_points = [
+                    (rx, ry),           # Top
+                    (rx - 8, ry + 18),  # Bottom Left
+                    (rx + 8, ry + 18)   # Bottom Right
+                ]
+                
+                # Fill based on click state
+                draw.polygon(triangle_points, fill=self.cursor_color, outline='black')
+                
+                return np.array(pil_img)
+
+        except Exception as e:
+            # Don't crash on drawing errors
+            pass
+            
+        return img_rgb
 
     def _capture_frame(self):
         if not self.target_window_id: return None
@@ -221,17 +283,19 @@ class IdleScreenRecorder:
         
         img = buff.reshape((h, w, 4))
         img = img[:, :, :3] # Drop Alpha
-        img = img[:, :, [2, 1, 0]] # BGRA -> RGB
+        img_rgb = img[:, :, [2, 1, 0]] # BGRA -> RGB
 
-        # Ensure even dimensions for FFMPEG
+        img_with_cursor = self._draw_cursor_on_frame(img_rgb, w, h)
+
         h_even = h - (h % 2)
         w_even = w - (w % 2)
-        return img[:h_even, :w_even, :]
+        return img_with_cursor[:h_even, :w_even, :]
 
     def record_until_idle(self):
-        # 1. LAUNCH GUI IN SUBPROCESS (Fixes macOS threading crash)
+        # 1. TRIGGER THE GUI HERE
         print("[Recorder] Launching GUI Selector...")
         try:
+            # This calls THIS file again with the flag to open the GUI
             cmd = [sys.executable, os.path.abspath(__file__), "--select-window"]
             result = subprocess.check_output(cmd, stderr=sys.stderr).decode().strip()
             
@@ -249,14 +313,17 @@ class IdleScreenRecorder:
             print(f"[Recorder] Invalid ID returned: {result}")
             return
 
-        # 2. Initialize Recording
+        # 2. START RECORDING
         self._frames = []
         self._video_buffer = None
         self._mark_activity()
         self._start_listeners()
         
+        # Reset visual tracker
+        self.prev_gray_frame = None
+        
         start_time = time.time()
-        print(f"[Recorder] Recording... (Stop by not typing for {self.idle_seconds}s)")
+        print(f"[Recorder] Recording... (Stop by not acting for {self.idle_seconds}s)")
 
         try:
             while True:
@@ -266,13 +333,37 @@ class IdleScreenRecorder:
                 if frame is not None:
                     self._frames.append(frame)
 
+                    # ──────────────────────────────────────────────
+                    # VISUAL ACTIVITY DETECTION (SCROLLING CHECK)
+                    # ──────────────────────────────────────────────
+                    # 1. Convert to grayscale (mean of RGB) to simplify
+                    curr_gray = frame.mean(axis=2)
+                    
+                    if self.prev_gray_frame is not None:
+                        # 2. Calculate pixel difference
+                        diff = np.abs(curr_gray - self.prev_gray_frame)
+                        
+                        # 3. Check for meaningful change (>15 value shift)
+                        # This ignores tiny compression noise
+                        changed_mask = diff > 15
+                        
+                        # 4. Calculate Ratio (0.0 to 1.0)
+                        change_ratio = np.mean(changed_mask)
+                        
+                        # 5. Threshold: If > 0.5% of pixels changed, it's activity
+                        if change_ratio > 0.005: 
+                            self._mark_activity()
+                    
+                    self.prev_gray_frame = curr_gray
+                    # ──────────────────────────────────────────────
+
                 now = time.time()
                 with self._activity_lock:
                     idle_time = now - self._last_activity_time
                 
                 if idle_time >= self.idle_seconds:
                     self._stopped_reason = "idle"
-                    print("[Recorder] Keyboard idle detected. Stopping.")
+                    print("[Recorder] Idle detected (No keys & No pixel changes). Stopping.")
                     break
 
                 if (now - start_time) >= self.max_duration:
@@ -371,5 +462,3 @@ if __name__ == "__main__":
                 print("None")
         except KeyboardInterrupt:
             print("None")
-
-            
