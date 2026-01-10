@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+      "simulator-python": {
+        "command": "uv",
+        "args": [
+          "run",
+          "/Users/rithwiknukala/Desktop/SBHacks12/server/mcp_endpoints.py"
+        ]
+      }
+    }
+  }
