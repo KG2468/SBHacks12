@@ -169,7 +169,7 @@ class WindowSelectorGUI:
 # 2. THE RECORDER (Quartz Engine)
 # ─────────────────────────────────────────────────────────
 class IdleScreenRecorder:
-    def __init__(self, idle_seconds=5, max_duration=300, fps=10):
+    def __init__(self, idle_seconds=5, max_duration=300, fps=10, target_window_id=None):
         self.idle_seconds = idle_seconds
         self.max_duration = max_duration
         self.fps = fps
@@ -191,7 +191,7 @@ class IdleScreenRecorder:
         self._video_buffer = None
         self._recording_duration = 0.0
         self._stopped_reason = None
-        self.target_window_id = None
+        self.target_window_id = target_window_id
 
     def _mark_activity(self):
         """Updates the timer when activity happens."""
@@ -292,26 +292,28 @@ class IdleScreenRecorder:
         return img_with_cursor[:h_even, :w_even, :]
 
     def record_until_idle(self, video_queue, queue_lock) -> None:
-        # 1. TRIGGER THE GUI HERE
-        print("[Recorder] Launching GUI Selector...")
-        try:
-            # This calls THIS file again with the flag to open the GUI
-            cmd = [sys.executable, os.path.abspath(__file__), "--select-window"]
-            result = subprocess.check_output(cmd, stderr=sys.stderr).decode().strip()
+        # # 1. TRIGGER THE GUI HERE
+        # print("[Recorder] Launching GUI Selector...")
+        # try:
+        #     # This calls THIS file again with the flag to open the GUI
+        #     # cmd = [sys.executable, os.path.abspath(__file__), "--select-window"]
+        #     # result = subprocess.check_output(cmd, stderr=sys.stderr).decode().strip()
             
-            if not result or "None" in result:
-                print("[Recorder] No selection made.")
-                return
+        #     # if not result or "None" in result:
+        #     #     print("[Recorder] No selection made.")
+        #     #     return
+            
+        #     print(f"[Recorder] Locked to Window ID {self.target_window_id}")
 
-            self.target_window_id = int(result)
-            print(f"[Recorder] Locked to Window ID {self.target_window_id}")
-
-        except subprocess.CalledProcessError as e:
-            print(f"[Recorder] GUI Process failed: {e}")
-            return
-        except ValueError:
-            print(f"[Recorder] Invalid ID returned: {result}")
-            return
+        # except subprocess.CalledProcessError as e:
+        #     print(f"[Recorder] GUI Process failed: {e}")
+        #     return
+        # except ValueError:
+        #     print(f"[Recorder] Invalid ID returned: {sid}")
+        #     return
+        # except Exception as e:
+        #     print(f"[Recorder] GUI Selector Error: {e}")
+        #     return
 
         # 2. START RECORDING
         self._frames = []
@@ -403,11 +405,16 @@ class IdleScreenRecorder:
 # ─────────────────────────────────────────────────────────
 class VideoEngine:
     def __init__(self):
-        self.recorder = IdleScreenRecorder()
+        selector = WindowSelectorGUI()
+        sid = selector.select()
+
+
+        self.recorder = IdleScreenRecorder(target_window_id=sid)
 
         self.video_queue = []
         self.video_queue_lock = threading.Lock()
         self.start_recording_session()
+        time.sleep(30)  # Give some time to initialize
 
 
     def start_recording_session(self):
@@ -440,16 +447,16 @@ class VideoEngine:
         return None
 
 
-engine = VideoEngine()
+# engine = VideoEngine()
 
-while True:
-    time.sleep(1)
-    if engine.check_video():
-        print("[Engine] Video ready for processing.")
-        video_bytes = engine.get_video()
-        # Here you would process the video bytes as needed
-        # For this example, we just print the size
-        print(f"[Engine] Retrieved video of size: {len(video_bytes)} bytes.")
+# while True:
+#     time.sleep(1)
+#     if engine.check_video():
+#         print("[Engine] Video ready for processing.")
+#         video_bytes = engine.get_video()
+#         # Here you would process the video bytes as needed
+#         # For this example, we just print the size
+#         print(f"[Engine] Retrieved video of size: {len(video_bytes)} bytes.")
 
 # # ─────────────────────────────────────────────────────────
 # # 4. SUBPROCESS ENTRY POINT (Required for GUI)
