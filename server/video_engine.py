@@ -291,7 +291,7 @@ class IdleScreenRecorder:
         w_even = w - (w % 2)
         return img_with_cursor[:h_even, :w_even, :]
 
-    def record_until_idle(self):
+    def record_until_idle(self, video_queue, queue_lock) -> None:
         # 1. TRIGGER THE GUI HERE
         print("[Recorder] Launching GUI Selector...")
         try:
@@ -321,8 +321,8 @@ class IdleScreenRecorder:
         
         # Reset visual tracker
         self.prev_gray_frame = None
+        idling = True
         
-        start_time = time.time()
         print(f"[Recorder] Recording... (Stop by not acting for {self.idle_seconds}s)")
 
         try:
@@ -337,9 +337,14 @@ class IdleScreenRecorder:
                     # VISUAL ACTIVITY DETECTION (SCROLLING CHECK)
                     # ──────────────────────────────────────────────
                     # 1. Convert to grayscale (mean of RGB) to simplify
-                    curr_gray = frame.mean(axis=2)
                     
-                    if self.prev_gray_frame is not None:
+
+                    if len(self._frames)%self.fps == 0:
+                        curr_gray = frame.mean(axis=2)
+                        if self.prev_gray_frame is None:
+                            self.prev_gray_frame = curr_gray
+                            continue
+            
                         # 2. Calculate pixel difference
                         diff = np.abs(curr_gray - self.prev_gray_frame)
                         
@@ -353,22 +358,26 @@ class IdleScreenRecorder:
                         # 5. Threshold: If > 0.5% of pixels changed, it's activity
                         if change_ratio > 0.005: 
                             self._mark_activity()
+                            idling = False
                     
-                    self.prev_gray_frame = curr_gray
+                        self.prev_gray_frame = curr_gray
                     # ──────────────────────────────────────────────
 
                 now = time.time()
                 with self._activity_lock:
                     idle_time = now - self._last_activity_time
                 
-                if idle_time >= self.idle_seconds:
-                    self._stopped_reason = "idle"
-                    print("[Recorder] Idle detected (No keys & No pixel changes). Stopping.")
-                    break
-
-                if (now - start_time) >= self.max_duration:
-                    self._stopped_reason = "max_duration"
-                    break
+                if idle_time >= self.idle_seconds or len(self._frames) >= self.max_duration * self.fps:
+                    if idling:
+                        self._frames.clear()
+                        continue
+                    vid = self._frames
+                    self._frames = []
+                    vid = self._encode_to_ram(vid)
+                    queue_lock.acquire()
+                    video_queue.append(vid)
+                    queue_lock.release()
+                    idling = True
 
                 process_time = time.time() - loop_start
                 sleep_time = max(0, (1.0 / self.fps) - process_time)
@@ -376,36 +385,18 @@ class IdleScreenRecorder:
         finally:
             self._stop_listeners()
 
-        self._recording_duration = round(time.time() - start_time, 2)
-        self._encode_to_ram()
 
-    def _encode_to_ram(self):
-        if not self._frames: return
-        print(f"[Recorder] Encoding {len(self._frames)} frames...")
+    def _encode_to_ram(self, frames):
+        if not frames: return
+        print(f"[Recorder] Encoding {len(frames)} frames...")
         buffer = BytesIO()
         try:
-            iio.imwrite(buffer, self._frames, extension=".mp4", fps=self.fps, codec="libx264", format_hint=".mp4")
+            iio.imwrite(buffer, frames, extension=".mp4", fps=self.fps, codec="libx264", format_hint=".mp4")
             buffer.seek(0)
-            self._video_buffer = buffer
-            print("[Recorder] Encoding Complete.")
+            return buffer.getvalue()
         except Exception as e:
             print(f"[Recorder] Encoding Error: {e}")
-        self._frames.clear()
 
-    def get_video_bytes(self):
-        return self._video_buffer.getvalue() if self._video_buffer else b""
-
-    def delete_video(self):
-        if self._video_buffer:
-            self._video_buffer.close()
-            self._video_buffer = None
-
-    def get_metadata(self):
-        return {
-            "duration_seconds": self._recording_duration,
-            "idle_seconds": self.idle_seconds,
-            "stopped_reason": self._stopped_reason,
-        }
 
 # ─────────────────────────────────────────────────────────
 # 3. THE ENGINE (Manager)
@@ -413,30 +404,20 @@ class IdleScreenRecorder:
 class VideoEngine:
     def __init__(self):
         self.recorder = IdleScreenRecorder()
-        self.is_recording = False
-        self.video_ready = False
-        self.status_message = "Idle"
+
+        self.video_queue = []
+        self.video_queue_lock = threading.Lock()
+        self.start_recording_session()
+
 
     def start_recording_session(self):
-        if self.is_recording: return "Error: Already recording."
-        self.is_recording = True
-        self.video_ready = False
-        self.status_message = "Selecting Window..."
         threading.Thread(target=self._recording_worker, daemon=True).start()
-        return "Selector launched on server."
 
     def _recording_worker(self):
         try:
-            self.recorder.record_until_idle()
-            if self.recorder._video_buffer:
-                self.video_ready = True
-                self.status_message = "Video Captured. Ready for retrieval."
-            else:
-                self.status_message = "Recording cancelled or failed."
+            self.recorder.record_until_idle(self.video_queue, self.video_queue_lock)
         except Exception as e:
             self.status_message = f"Error: {e}"
-        finally:
-            self.is_recording = False
 
     def get_video_data(self):
         if not self.video_ready: return None, "No video ready."
@@ -445,20 +426,42 @@ class VideoEngine:
         self.video_ready = False
         self.status_message = "Idle"
         return data, "Success"
+    
+    def check_video(self):
+        return len(self.video_queue) > 0
+    
+    def get_video(self):
+        self.video_queue_lock.acquire()
+        if self.video_queue:
+            video_data = self.video_queue.pop(0)
+            self.video_queue_lock.release()
+            return video_data
+        self.video_queue_lock.release()
+        return None
+
 
 engine = VideoEngine()
 
-# ─────────────────────────────────────────────────────────
-# 4. SUBPROCESS ENTRY POINT (Required for GUI)
-# ─────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    if "--select-window" in sys.argv:
-        try:
-            selector = WindowSelectorGUI()
-            sid = selector.select()
-            if sid:
-                print(sid)
-            else:
-                print("None")
-        except KeyboardInterrupt:
-            print("None")
+while True:
+    time.sleep(1)
+    if engine.check_video():
+        print("[Engine] Video ready for processing.")
+        video_bytes = engine.get_video()
+        # Here you would process the video bytes as needed
+        # For this example, we just print the size
+        print(f"[Engine] Retrieved video of size: {len(video_bytes)} bytes.")
+
+# # ─────────────────────────────────────────────────────────
+# # 4. SUBPROCESS ENTRY POINT (Required for GUI)
+# # ─────────────────────────────────────────────────────────
+# if __name__ == "__main__":
+#     if "--select-window" in sys.argv:
+#         try:
+#             selector = WindowSelectorGUI()
+#             sid = selector.select()
+#             if sid:
+#                 print(sid)
+#             else:
+#                 print("None")
+#         except KeyboardInterrupt:
+#             print("None")
