@@ -422,8 +422,8 @@ class IdleScreenRecorder:
                         # 4. Calculate Ratio (0.0 to 1.0)
                         change_ratio = np.mean(changed_mask)
                         
-                        # 5. Threshold: If > 0.5% of pixels changed, it's activity
-                        if change_ratio > 0.005: 
+                        # 5. Threshold: If > 0.35% of pixels changed, it's activity
+                        if change_ratio > 0.0035: 
                             self._mark_activity()
                             idling = False
                     
