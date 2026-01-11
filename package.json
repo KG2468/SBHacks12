@@ -22,7 +22,13 @@
         "command": "sbhacks12.stopServer",
         "title": "Stop Python Language Server"
       }
-    ]
+    ],
+    "mcpServerDefinitionProviders": [
+            {
+                "id": "exampleProvider",
+                "label": "Example MCP Server Provider"
+            }
+        ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

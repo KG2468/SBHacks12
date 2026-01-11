@@ -5,7 +5,7 @@ def select_window():
     print("🔍 Scanning for 'Cursor' windows...")
     
     # 1. Get all windows owned by "Cursor" (or change to None to see ALL apps)
-    windows = engine.list_windows("Cursor")
+    windows = engine.list_windows(None)
     
     if not windows:
         print("❌ No Cursor windows found. Is it open?")
