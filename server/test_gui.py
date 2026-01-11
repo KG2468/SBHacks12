@@ -20,7 +20,7 @@ def main():
     test_engine = VideoEngine()
 
     while True:
-        time.sleep(1)
+        
         if test_engine.check_video():
             print("[Engine] Video ready for processing.")
             video_bytes = test_engine.get_video()
@@ -28,6 +28,7 @@ def main():
             # For this example, we just print the size
             print(f"[Engine] Retrieved video of size: {len(video_bytes)} bytes.")
             break
+        time.sleep(1)
     # response = VideoEngine.start_recording_session()
     # print(f"[Test] Engine Response: {response}")
 

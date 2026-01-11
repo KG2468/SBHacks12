@@ -7,24 +7,10 @@ mcp = FastMCP("Visual Debugger")
 @mcp.tool()
 def check_status() -> str:
     """
-    Checks the status of the debugging session.
-    
-    - If the system is IDLE, this automatically starts the Screen Recorder.
-    - If the system is BUSY, it returns the current progress.
-    - If the system is READY, it tells you to call 'get_debugged_code'.
+    Displays whether there is new visual debugging data available.
     """
     
-    # 1. If we have a result, tell the agent
-    if engine.analysis_ready:
-        return "YES. The analysis is finished. Call 'get_debugged_code' to retrieve the fix."
-
-    # 2. If we are already working, report status
-    if engine.is_running:
-        return f"WAIT. {engine.status_message}"
-
-    # 3. If idle, start the process automatically
-    engine.trigger_session()
-    return "STARTED. I have begun watching the screen for activity. Check back in a moment."
+    
 
 
 @mcp.tool()

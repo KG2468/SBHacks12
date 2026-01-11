@@ -17,6 +17,8 @@ from PIL import Image, ImageDraw
 import imageio.v3 as iio
 from pynput import keyboard, mouse
 from pynput.mouse import Controller as MouseController
+import pywinctl as pwc 
+
 
 # ─────────────────────────────────────────────────────────
 # 1. THE VISUAL WINDOW SELECTOR (GUI)
@@ -141,6 +143,7 @@ class WindowSelectorGUI:
     def select(self):
         self._log("[GUI] Scanning windows...")
         windows = self.get_windows()
+        # return windows[0]['id']  # TEMPORARY BYPASS GUI
         
         if not windows:
             self._log("[GUI] No windows found.")
@@ -221,12 +224,23 @@ class WindowSelectorGUI:
 
         canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta)), "units"))
 
+        # Handle window close button
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
         self.root.mainloop()
         return self.selected_id
 
+    def _on_close(self):
+        """Handle window close without selection."""
+        self.selected_id = None
+        self.root.quit()
+        self.root.destroy()
+
     def _on_click(self, window_id):
         self.selected_id = window_id
+        self.root.quit()
         self.root.destroy()
+        
 
 
 
@@ -395,6 +409,7 @@ class IdleScreenRecorder:
         try:
             while True:
                 loop_start = time.time()
+                # print(loop_start)
 
                 frame = self._capture_frame()
                 if frame is not None:
@@ -421,6 +436,7 @@ class IdleScreenRecorder:
                         
                         # 4. Calculate Ratio (0.0 to 1.0)
                         change_ratio = np.mean(changed_mask)
+                        print(change_ratio)
                         
                         # 5. Threshold: If > 0.35% of pixels changed, it's activity
                         if change_ratio > 0.0035: 
@@ -432,21 +448,24 @@ class IdleScreenRecorder:
 
                 now = time.time()
                 with self._activity_lock:
-                    idle_time = now - self._last_activity_time
+                    idle_time = (now - self._last_activity_time)# / 1000
                 
                 if idle_time >= self.idle_seconds or len(self._frames) >= self.max_duration * self.fps:
                     if idling:
                         self._frames.clear()
+                        self._mark_activity()
                         continue
                     vid = self._frames
                     self._frames = []
                     vid = self._encode_to_ram(vid)
                     queue_lock.acquire()
                     video_queue.append(vid)
+                    print(len(video_queue))
                     queue_lock.release()
                     idling = True
 
-                process_time = time.time() - loop_start
+                process_time = (time.time() - loop_start)
+                
                 sleep_time = max(0, (1.0 / self.fps) - process_time)
                 time.sleep(sleep_time)
         # finally:
@@ -474,6 +493,10 @@ class VideoEngine:
     def __init__(self):
         selector = WindowSelectorGUI()
         sid = selector.select()
+        # sid = select_window()
+        # print(pwc.checkPermissions())
+
+
 
         
         self.recorder = IdleScreenRecorder(target_window_id=sid)
