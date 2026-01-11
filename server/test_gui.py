@@ -18,6 +18,16 @@ def main():
     # 1. Start the session
     print("[Test] Requesting new recording session...")
     test_engine = VideoEngine()
+
+    while True:
+        time.sleep(1)
+        if test_engine.check_video():
+            print("[Engine] Video ready for processing.")
+            video_bytes = test_engine.get_video()
+            # Here you would process the video bytes as needed
+            # For this example, we just print the size
+            print(f"[Engine] Retrieved video of size: {len(video_bytes)} bytes.")
+            break
     # response = VideoEngine.start_recording_session()
     # print(f"[Test] Engine Response: {response}")
 
