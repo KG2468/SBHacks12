@@ -21,11 +21,24 @@ def analyze_video_from_ram(video_bytes: bytes, timeout_seconds: int = 300):
     # Ensure the stream is at the start
     #video_stream.seek(0)
 
-    # 2. Create an Index (consider reusing an existing index in production)
-    index = client.indexes.create(
-        index_name="RAM-Debug-Index",
-        models=[{"model_name": "pegasus1.2", "model_options": ["visual"]}]
-    )
+    # 2. Use existing index from TL_ID, or create one if not set
+    if not tl_id:
+        try:
+            index = client.indexes.create(
+                index_name="RAM-Debug-Index",
+                models=[{"model_name": "pegasus1.2", "model_options": ["visual"]}]
+            )
+            tl_id = index.id
+        except Exception as e:
+            # Index might already exist, try to find it
+            if "already_exists" in str(e):
+                indexes = client.indexes.list()
+                for idx in indexes:
+                    if idx.index_name == "RAM-Debug-Index":
+                        tl_id = idx.id
+                        break
+            if not tl_id:
+                raise e
 
     print("Uploading recording from RAM...")
 

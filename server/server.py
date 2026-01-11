@@ -46,11 +46,43 @@ def get_visual_debugging_data() -> str:
             for item in analysis_queue:
                 out += "Interaction Session:\n"
                 out += item + "\n\n"
+            # Don't clear here - let the tool do it
+            return out
+
+
+@mcp.tool()
+def get_visual_debug_data() -> str:
+    """
+    Gets the latest visual debugging data from screen recordings.
+    Call this tool when you need to understand what the user is seeing on their screen
+    or to get context about recent user interactions.
+    """
+    with analysis_lock:
+        if len(analysis_queue) == 0:
+            return "No visual debugging data available. The user hasn't recorded any interactions yet."
+        else:
+            out = "Visual Debugging Data:\n\n"
+            for i, item in enumerate(analysis_queue, 1):
+                out += f"=== Interaction Session {i} ===\n"
+                out += item + "\n\n"
             analysis_queue.clear()
             with status_lock:
                 global status
                 status = False
             return out
+
+
+@mcp.tool()
+def check_visual_debug_status() -> str:
+    """
+    Checks if new visual debugging data is available from screen recordings.
+    Call this to see if the user has recorded new interactions that can be analyzed.
+    """
+    with status_lock:
+        if status:
+            return "New visual debugging data is available. Use get_visual_debug_data to retrieve it."
+        return "No new visual debugging data available."
+
         
 def async_main() -> None:
     """

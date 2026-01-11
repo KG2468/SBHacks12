@@ -73,18 +73,35 @@ export function activate(context: vscode.ExtensionContext) {
             
             outputChannel.appendLine(`Env vars loaded: TL_API_KEY=${envVars.TL_API_KEY ? '[SET]' : '[NOT SET]'}, TL_ID=${envVars.TL_ID ? '[SET]' : '[NOT SET]'}`);
 
-            // Use the venv python if it exists, otherwise fall back to system python
-            const pythonCommand = fs.existsSync(pythonPath) ? pythonPath : 'python';
-            outputChannel.appendLine(`Using python command: ${pythonCommand}`);
+            // Check if uv is available for better environment handling
+            const uvPaths = ['/Users/kinjal/.local/bin/uv', '/opt/homebrew/bin/uv', '/usr/local/bin/uv'];
+            let uvPath = uvPaths.find(p => fs.existsSync(p));
+            const useUv = !!uvPath;
+            outputChannel.appendLine(`uv available: ${useUv}${uvPath ? ` at ${uvPath}` : ''}`);
+
+            let command: string;
+            let args: string[];
+            
+            if (useUv) {
+                // Use uv run to handle the Python environment
+                command = uvPath;
+                args = ['run', '--project', workspaceFolder, 'python', serverPath];
+            } else {
+                // Use the venv python directly
+                const pythonCommand = fs.existsSync(pythonPath) ? pythonPath : 'python';
+                command = pythonCommand;
+                args = ['-u', serverPath];  // -u for unbuffered output
+            }
+            
+            outputChannel.appendLine(`Command: ${command}`);
+            outputChannel.appendLine(`Args: ${args.join(' ')}`);
 
             const serverDef = new vscode.McpStdioServerDefinition(
                 'Visual Testing MCP Server',
-                pythonCommand,
-                [serverPath],
+                command,
+                args,
                 envVars
             );
-            // Set the working directory to the workspace folder
-            (serverDef as any).cwd = workspaceFolder;
             
             servers.push(serverDef);
             outputChannel.appendLine(`Returning ${servers.length} server definition(s)`);
