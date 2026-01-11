@@ -21,10 +21,10 @@ def analyze_video_from_ram(video_bytes: bytes, timeout_seconds: int = 300):
     #video_stream.seek(0)
 
     # 2. Create an Index (consider reusing an existing index in production)
-    #index = client.indexes.create(
-    #    index_name="RAM-Debug-Index",
-    #    models=[{"model_name": "pegasus1.2", "model_options": ["visual"]}]
-    #)
+    index = client.indexes.create(
+        index_name="RAM-Debug-Index",
+        models=[{"model_name": "pegasus1.2", "model_options": ["visual"]}]
+    )
 
     print("Uploading recording from RAM...")
 
@@ -62,8 +62,9 @@ def analyze_video_from_ram(video_bytes: bytes, timeout_seconds: int = 300):
             """
             Your purpose is to be an observer and provide context based on a video you are given.
             Give a detailed summary of the video content and and explain in a step by step process what is happening. 
-            This summary should also include any cursor/keyboard movement that occurs and the effects of such cursor/keyboard movement.
-            Please also note that the cursor appears as a white triangle, and when the user left clicks it flashes green and when the user right clicks it flashes red.
+            Please also note that the cursor appears as a white triangle, and when the user left clicks it flashes green and when the user right clicks it flashes red however do not mention the cursor colors in the summary.
+            This summary should also include any cursor/keyboard movement that occurs and the effects of such cursor/keyboard movement, please be precise as to what happens when the user left or right clicks.
+            Do NOT mention the mouse color changing at all, only use the information about the cursor changing color as information for yourself.
             Also, do NOT make any assumptions about anything not clearly shown in the video, no assumptions should be made about anything. 
             """,
             response_format=ResponseFormat(
@@ -96,7 +97,7 @@ def find_index_id():
 
 def main():
     # Example usage
-    with open("FirstClickerTest.mov", "rb") as f:
+    with open("VideoTests/Capybara_test_score400.mp4", "rb") as f:
         video_data = f.read()
     
     result = analyze_video_from_ram(video_data)
