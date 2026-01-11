@@ -1,4 +1,15 @@
 import time
+import os
+import sys
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Add the server directory to Python path for imports when run from workspace root
+_server_dir = os.path.dirname(os.path.abspath(__file__))
+if _server_dir not in sys.path:
+    sys.path.insert(0, _server_dir)
+
 from mcp.server.fastmcp import FastMCP
 from video_engine import VideoEngine
 from twelvelabserver import analyze_video_from_ram

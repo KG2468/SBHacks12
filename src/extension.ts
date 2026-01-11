@@ -3,13 +3,41 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 
 export function activate(context: vscode.ExtensionContext) {
-
+    // Use output channel for better visibility - show it immediately
+    const outputChannel = vscode.window.createOutputChannel('SBHacks12');
+    outputChannel.show(true);
+    outputChannel.appendLine('=== SBHacks12 extension is activating ===');
+    outputChannel.appendLine(`Extension path: ${context.extensionPath}`);
+    outputChannel.appendLine(`VS Code version: ${vscode.version}`);
+    
+    console.log('SBHacks12 extension is now activating...');
+    
+    // Register a simple command to verify extension is loaded
+    const testCommand = vscode.commands.registerCommand('sbhacks12.test', () => {
+        vscode.window.showInformationMessage('SBHacks12 extension is active!');
+        outputChannel.appendLine('Test command executed');
+    });
+    context.subscriptions.push(testCommand);
+    
+    // Check if the MCP API is available
+    outputChannel.appendLine(`vscode.lm exists: ${!!vscode.lm}`);
+    outputChannel.appendLine(`vscode.lm keys: ${vscode.lm ? Object.keys(vscode.lm).join(', ') : 'N/A'}`);
+    
+    if (!vscode.lm || typeof vscode.lm.registerMcpServerDefinitionProvider !== 'function') {
+        const errorMsg = 'MCP Server Definition Provider API is not available. This API may require VS Code Insiders or enabling proposed APIs.';
+        console.error(errorMsg);
+        outputChannel.appendLine(`ERROR: ${errorMsg}`);
+        vscode.window.showErrorMessage(errorMsg);
+        return;
+    }
 
     const didChangeEmitter = new vscode.EventEmitter<void>();
 
-    context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('Visual Testing MCP', {
+    try {
+        context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('Visual Testing MCP', {
         onDidChangeMcpServerDefinitions: didChangeEmitter.event,
         provideMcpServerDefinitions: async () => {
+            outputChannel.appendLine('provideMcpServerDefinitions called');
             let servers: vscode.McpServerDefinition[] = [];
 
             // Get workspace folder for proper paths
@@ -17,10 +45,16 @@ export function activate(context: vscode.ExtensionContext) {
             const serverPath = path.join(workspaceFolder, 'server', 'server.py');
             const pythonPath = path.join(workspaceFolder, '.venv', 'bin', 'python');
 
-            // Load environment variables from .env file if it exists
+            outputChannel.appendLine(`Workspace folder: ${workspaceFolder}`);
+            outputChannel.appendLine(`Server path: ${serverPath}`);
+            outputChannel.appendLine(`Server exists: ${fs.existsSync(serverPath)}`);
+            outputChannel.appendLine(`Python path: ${pythonPath}`);
+            outputChannel.appendLine(`Python exists: ${fs.existsSync(pythonPath)}`);
+
+            // Load environment variables from system env first, then .env file
             let envVars: Record<string, string> = {
-                TL_API_KEY: '',
-                TL_ID: ''
+                TL_API_KEY: process.env.TL_API_KEY || '',
+                TL_ID: process.env.TL_ID || ''
             };
             
             const envFilePath = path.join(workspaceFolder, '.env');
@@ -36,12 +70,15 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 }
             }
+            
+            outputChannel.appendLine(`Env vars loaded: TL_API_KEY=${envVars.TL_API_KEY ? '[SET]' : '[NOT SET]'}, TL_ID=${envVars.TL_ID ? '[SET]' : '[NOT SET]'}`);
 
             // Use the venv python if it exists, otherwise fall back to system python
             const pythonCommand = fs.existsSync(pythonPath) ? pythonPath : 'python';
+            outputChannel.appendLine(`Using python command: ${pythonCommand}`);
 
             const serverDef = new vscode.McpStdioServerDefinition(
-                'myServer',
+                'Visual Testing MCP Server',
                 pythonCommand,
                 [serverPath],
                 envVars
@@ -50,12 +87,14 @@ export function activate(context: vscode.ExtensionContext) {
             (serverDef as any).cwd = workspaceFolder;
             
             servers.push(serverDef);
+            outputChannel.appendLine(`Returning ${servers.length} server definition(s)`);
 
             return servers;
         },
         resolveMcpServerDefinition: async (server: vscode.McpStdioServerDefinition) => {
+            outputChannel.appendLine(`resolveMcpServerDefinition called for: ${server.label}`);
 
-            if (server.label === 'myServer') {
+            if (server.label === 'Visual Testing MCP Server') {
                 // Only prompt for values that are missing
                 const currentEnv = server.env || {};
                 
@@ -66,6 +105,7 @@ export function activate(context: vscode.ExtensionContext) {
                     });
                     if (api_key === undefined) {
                         // User cancelled
+                        outputChannel.appendLine('User cancelled API key input');
                         return undefined;
                     }
                     currentEnv.TL_API_KEY = api_key;
@@ -78,17 +118,28 @@ export function activate(context: vscode.ExtensionContext) {
                     });
                     if (tl_id === undefined) {
                         // User cancelled
+                        outputChannel.appendLine('User cancelled TL_ID input');
                         return undefined;
                     }
                     currentEnv.TL_ID = tl_id;
                 }
                 
                 server.env = currentEnv;
+                outputChannel.appendLine('Server definition resolved successfully');
             }
 
             return server;
         }
     }));
+    
+        outputChannel.appendLine('MCP Server Definition Provider registered successfully');
+        console.log('MCP Server Definition Provider registered successfully');
+    } catch (error) {
+        const errorMsg = `Failed to register MCP Server Definition Provider: ${error}`;
+        console.error(errorMsg);
+        outputChannel.appendLine(errorMsg);
+        vscode.window.showErrorMessage(errorMsg);
+    }
 
 
 

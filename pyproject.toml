@@ -17,6 +17,7 @@ dependencies = [
     "pyobjc-framework-cocoa>=12.1",
     "pillow>=12.1.0",
     "pywinctl>=0.4.1",
+    "python-dotenv>=1.2.1",
 ]
 
 [tool.uv.workspace]

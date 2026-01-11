@@ -7,14 +7,25 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "enabledApiProposals": [
+    "lmTools",
+    "chatParticipantPrivate",
+    "mcpServerDefinitionProvider"
+  ],
   "categories": [
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "*"
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "sbhacks12.test",
+        "title": "SBHacks12: Test Extension"
+      }
+    ],
     "mcpServerDefinitionProviders": [
             {
                 "id": "Visual Testing MCP",
