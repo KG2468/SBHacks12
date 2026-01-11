@@ -1,53 +1,91 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
-import {
-    LanguageClient,
-    LanguageClientOptions,
-    ServerOptions,
-    TransportKind
-} from 'vscode-languageclient/node';
-
-let client: LanguageClient | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
 
 
     const didChangeEmitter = new vscode.EventEmitter<void>();
 
-    context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('exampleProvider', {
+    context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('Visual Testing MCP', {
         onDidChangeMcpServerDefinitions: didChangeEmitter.event,
         provideMcpServerDefinitions: async () => {
             let servers: vscode.McpServerDefinition[] = [];
 
-        // Example of a simple stdio server definition
-        servers.push(new vscode.McpStdioServerDefinition(
-            'myServer',
-            'python',
-            ['server/server.py'],
-            {
+            // Get workspace folder for proper paths
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || context.extensionPath;
+            const serverPath = path.join(workspaceFolder, 'server', 'server.py');
+            const pythonPath = path.join(workspaceFolder, '.venv', 'bin', 'python');
+
+            // Load environment variables from .env file if it exists
+            let envVars: Record<string, string> = {
                 TL_API_KEY: '',
                 TL_ID: ''
+            };
+            
+            const envFilePath = path.join(workspaceFolder, '.env');
+            if (fs.existsSync(envFilePath)) {
+                const envContent = fs.readFileSync(envFilePath, 'utf-8');
+                for (const line of envContent.split('\n')) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine && !trimmedLine.startsWith('#')) {
+                        const match = trimmedLine.match(/^([^=]+)=['"]?([^'"]*)['"]?$/);
+                        if (match) {
+                            envVars[match[1].trim()] = match[2].trim();
+                        }
+                    }
+                }
             }
-        ));
+
+            // Use the venv python if it exists, otherwise fall back to system python
+            const pythonCommand = fs.existsSync(pythonPath) ? pythonPath : 'python';
+
+            const serverDef = new vscode.McpStdioServerDefinition(
+                'myServer',
+                pythonCommand,
+                [serverPath],
+                envVars
+            );
+            // Set the working directory to the workspace folder
+            (serverDef as any).cwd = workspaceFolder;
+            
+            servers.push(serverDef);
 
             return servers;
         },
         resolveMcpServerDefinition: async (server: vscode.McpStdioServerDefinition) => {
 
             if (server.label === 'myServer') {
-                // Get the API key from the user, e.g. using vscode.window.showInputBox
-                // Update the server definition with the API key
-                const api_key = await vscode.window.showInputBox({ prompt: 'Enter your TwelveLabs API key' });
-                const tl_id = await vscode.window.showInputBox({ prompt: 'Enter your TwelveLabs ID' });
-                server.env = {
-                    TL_API_KEY: api_key || '',
-                    TL_ID: tl_id || ''
-                };
+                // Only prompt for values that are missing
+                const currentEnv = server.env || {};
+                
+                if (!currentEnv.TL_API_KEY) {
+                    const api_key = await vscode.window.showInputBox({ 
+                        prompt: 'Enter your TwelveLabs API key',
+                        ignoreFocusOut: true
+                    });
+                    if (api_key === undefined) {
+                        // User cancelled
+                        return undefined;
+                    }
+                    currentEnv.TL_API_KEY = api_key;
+                }
+                
+                if (!currentEnv.TL_ID) {
+                    const tl_id = await vscode.window.showInputBox({ 
+                        prompt: 'Enter your TwelveLabs Index ID',
+                        ignoreFocusOut: true
+                    });
+                    if (tl_id === undefined) {
+                        // User cancelled
+                        return undefined;
+                    }
+                    currentEnv.TL_ID = tl_id;
+                }
+                
+                server.env = currentEnv;
             }
 
-            // Return undefined to indicate that the server should not be started or throw an error
-            // If there is a pending tool call, the editor will cancel it and return an error message
-            // to the language model.
             return server;
         }
     }));
@@ -73,64 +111,6 @@ export function activate(context: vscode.ExtensionContext) {
     // startLanguageServer(context);
 }
 
-async function startLanguageServer(context: vscode.ExtensionContext) {
-    if (client) {
-        vscode.window.showInformationMessage('Language server is already running.');
-        return;
-    }
-
-    // Path to the Python server script
-    const serverPath = path.join(context.extensionPath, 'server', 'server.py');
-
-    // Get Python path - try to use the uv virtual environment
-    const pythonPath = getPythonPath(context.extensionPath);
-
-    const serverOptions: ServerOptions = {
-        command: pythonPath,
-        args: [serverPath],
-        transport: TransportKind.stdio
-    };
-
-    const clientOptions: LanguageClientOptions = {
-        // Register the server for all documents
-        documentSelector: [{ scheme: 'file', language: '*' }],
-        synchronize: {
-            // Notify the server about file changes
-            fileEvents: vscode.workspace.createFileSystemWatcher('**/*')
-        },
-        outputChannelName: 'SBHacks12 Language Server'
-    };
-
-    client = new LanguageClient(
-        'sbhacks12',
-        'SBHacks12 Language Server',
-        serverOptions,
-        clientOptions
-    );
-
-    try {
-        await client.start();
-        vscode.window.showInformationMessage('Language server started successfully.');
-    } catch (error) {
-        vscode.window.showErrorMessage(`Failed to start language server: ${error}`);
-        client = undefined;
-    }
-}
-
-async function stopLanguageServer() {
-    if (!client) {
-        vscode.window.showInformationMessage('Language server is not running.');
-        return;
-    }
-
-    try {
-        await client.stop();
-        client = undefined;
-        vscode.window.showInformationMessage('Language server stopped.');
-    } catch (error) {
-        vscode.window.showErrorMessage(`Failed to stop language server: ${error}`);
-    }
-}
 
 function getPythonPath(extensionPath: string): string {
     // Check for uv virtual environment first
@@ -155,8 +135,6 @@ function getPythonPath(extensionPath: string): string {
 }
 
 export function deactivate(): Thenable<void> | undefined {
-    if (!client) {
-        return undefined;
-    }
-    return client.stop();
+    // Nothing to clean up - MCP servers are managed by VS Code
+    return undefined;
 }

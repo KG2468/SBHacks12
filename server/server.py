@@ -1,31 +1,66 @@
+import time
 from mcp.server.fastmcp import FastMCP
-from video_engine import engine
+from video_engine import VideoEngine
+from twelvelabserver import analyze_video_from_ram
+import threading
 
 # Define the server
 mcp = FastMCP("Visual Debugger")
+status = False
+status_lock = threading.Lock()
 
-@mcp.tool()
+analysis_queue = []
+analysis_lock = threading.Lock()
+
+@mcp.prompt(title="Visual Debugger Status", description="Checks if new visual debugging data is available.")
 def check_status() -> str:
     """
     Displays whether there is new visual debugging data available.
     """
-    
+    with status_lock:
+        return "New visual debugging data is available." if status else "No new visual debugging data."
     
 
 
-@mcp.tool()
-def get_debugged_code() -> str:
+@mcp.resource("resource://visual_debugger/get_debug_data", description="Accesses the latest visual debugging data.")
+def get_visual_debugging_data() -> str:
     """
-    Retrieves the final code fix from the analyzed video.
-    This consumes the result and resets the recorder for the next session.
+    Returns the latest visual debugging data.
     """
-    result = engine.get_result()
-    
-    if result is None:
-        return "ERROR: No code is ready yet. Please call 'check_status' first."
+    with analysis_lock:
+        if len(analysis_queue) == 0:
+            return "No visual debugging data available."
+        else:
+            out = ""
+            for item in analysis_queue:
+                out += "Interaction Session:\n"
+                out += item + "\n\n"
+            analysis_queue.clear()
+            with status_lock:
+                global status
+                status = False
+            return out
         
-    return f"--- DEBUGGED CODE ---\n\n{result}"
+def async_main() -> None:
+    """
+    Asynchronously updates the analysis queue with new data.
+    """
+    engine = VideoEngine()
+    while True:
+        if engine.check_video():
+            # print("[Engine] Video ready for processing.")
+            video_bytes = engine.get_video()
+            # Here you would process the video bytes as needed
+            # For this example, we just print the size
+            analysis_result = analyze_video_from_ram(video_bytes)
+            with analysis_lock:
+                analysis_queue.append(analysis_result)
+            with status_lock:
+                global status
+                status = True
+        time.sleep(1)
 
 if __name__ == "__main__":
     # Runs on stdio by default, perfect for local MCP integration
+    threading.Thread(target=async_main, daemon=True).start()
     mcp.run()

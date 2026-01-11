@@ -8,6 +8,7 @@ from twelvelabs.types import ResponseFormat
 
 def analyze_video_from_ram(video_bytes: bytes, timeout_seconds: int = 300):
     api_key = os.getenv("TL_API_KEY")
+    tl_id = os.getenv("TL_ID")
     #if not api_key:
     #    raise RuntimeError("TL_API_KEY is not set in the environment")
 
@@ -37,7 +38,7 @@ def analyze_video_from_ram(video_bytes: bytes, timeout_seconds: int = 300):
 
         # 4. Indexing & Polling with timeout and backoff
         indexed_asset = client.indexes.indexed_assets.create(
-            index_id="6962c301f7d06d04d986c6ab",
+            index_id=tl_id,
             asset_id=asset.id
         )
 
@@ -45,7 +46,7 @@ def analyze_video_from_ram(video_bytes: bytes, timeout_seconds: int = 300):
         sleep_seconds = 1
         while True:
             status_check = client.indexes.indexed_assets.retrieve(
-                index_id="6962c301f7d06d04d986c6ab",
+                index_id=tl_id,
                 indexed_asset_id=indexed_asset.id
             )
             if getattr(status_check, "status", None) == "ready":

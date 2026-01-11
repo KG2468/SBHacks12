@@ -10,23 +10,15 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "sbhacks12.startServer",
-        "title": "Start Python Language Server"
-      },
-      {
-        "command": "sbhacks12.stopServer",
-        "title": "Stop Python Language Server"
-      }
-    ],
     "mcpServerDefinitionProviders": [
             {
-                "id": "exampleProvider",
-                "label": "Example MCP Server Provider"
+                "id": "Visual Testing MCP",
+                "label": "Visual Testing MCP Server Provider"
             }
         ]
   },

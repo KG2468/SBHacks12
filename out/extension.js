@@ -36,69 +36,87 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const vscode = __importStar(require("vscode"));
-const node_1 = require("vscode-languageclient/node");
-let client;
 function activate(context) {
-    console.log('SBHacks12 extension is now active!');
-    // Register command to start the server
-    const startServerCommand = vscode.commands.registerCommand('sbhacks12.startServer', async () => {
-        await startLanguageServer(context);
-    });
-    // Register command to stop the server
-    const stopServerCommand = vscode.commands.registerCommand('sbhacks12.stopServer', async () => {
-        await stopLanguageServer();
-    });
-    context.subscriptions.push(startServerCommand, stopServerCommand);
-    // Auto-start the language server
-    startLanguageServer(context);
-}
-async function startLanguageServer(context) {
-    if (client) {
-        vscode.window.showInformationMessage('Language server is already running.');
-        return;
-    }
-    // Path to the Python server script
-    const serverPath = path.join(context.extensionPath, 'server', 'server.py');
-    // Get Python path - try to use the uv virtual environment
-    const pythonPath = getPythonPath(context.extensionPath);
-    const serverOptions = {
-        command: pythonPath,
-        args: [serverPath],
-        transport: node_1.TransportKind.stdio
-    };
-    const clientOptions = {
-        // Register the server for all documents
-        documentSelector: [{ scheme: 'file', language: '*' }],
-        synchronize: {
-            // Notify the server about file changes
-            fileEvents: vscode.workspace.createFileSystemWatcher('**/*')
+    const didChangeEmitter = new vscode.EventEmitter();
+    context.subscriptions.push(vscode.lm.registerMcpServerDefinitionProvider('Visual Testing MCP', {
+        onDidChangeMcpServerDefinitions: didChangeEmitter.event,
+        provideMcpServerDefinitions: async () => {
+            let servers = [];
+            // Get workspace folder for proper paths
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || context.extensionPath;
+            const serverPath = path.join(workspaceFolder, 'server', 'server.py');
+            const pythonPath = path.join(workspaceFolder, '.venv', 'bin', 'python');
+            // Load environment variables from .env file if it exists
+            let envVars = {
+                TL_API_KEY: '',
+                TL_ID: ''
+            };
+            const envFilePath = path.join(workspaceFolder, '.env');
+            if (fs.existsSync(envFilePath)) {
+                const envContent = fs.readFileSync(envFilePath, 'utf-8');
+                for (const line of envContent.split('\n')) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine && !trimmedLine.startsWith('#')) {
+                        const match = trimmedLine.match(/^([^=]+)=['"]?([^'"]*)['"]?$/);
+                        if (match) {
+                            envVars[match[1].trim()] = match[2].trim();
+                        }
+                    }
+                }
+            }
+            // Use the venv python if it exists, otherwise fall back to system python
+            const pythonCommand = fs.existsSync(pythonPath) ? pythonPath : 'python';
+            const serverDef = new vscode.McpStdioServerDefinition('myServer', pythonCommand, [serverPath], envVars);
+            // Set the working directory to the workspace folder
+            serverDef.cwd = workspaceFolder;
+            servers.push(serverDef);
+            return servers;
         },
-        outputChannelName: 'SBHacks12 Language Server'
-    };
-    client = new node_1.LanguageClient('sbhacks12', 'SBHacks12 Language Server', serverOptions, clientOptions);
-    try {
-        await client.start();
-        vscode.window.showInformationMessage('Language server started successfully.');
-    }
-    catch (error) {
-        vscode.window.showErrorMessage(`Failed to start language server: ${error}`);
-        client = undefined;
-    }
-}
-async function stopLanguageServer() {
-    if (!client) {
-        vscode.window.showInformationMessage('Language server is not running.');
-        return;
-    }
-    try {
-        await client.stop();
-        client = undefined;
-        vscode.window.showInformationMessage('Language server stopped.');
-    }
-    catch (error) {
-        vscode.window.showErrorMessage(`Failed to stop language server: ${error}`);
-    }
+        resolveMcpServerDefinition: async (server) => {
+            if (server.label === 'myServer') {
+                // Only prompt for values that are missing
+                const currentEnv = server.env || {};
+                if (!currentEnv.TL_API_KEY) {
+                    const api_key = await vscode.window.showInputBox({
+                        prompt: 'Enter your TwelveLabs API key',
+                        ignoreFocusOut: true
+                    });
+                    if (api_key === undefined) {
+                        // User cancelled
+                        return undefined;
+                    }
+                    currentEnv.TL_API_KEY = api_key;
+                }
+                if (!currentEnv.TL_ID) {
+                    const tl_id = await vscode.window.showInputBox({
+                        prompt: 'Enter your TwelveLabs Index ID',
+                        ignoreFocusOut: true
+                    });
+                    if (tl_id === undefined) {
+                        // User cancelled
+                        return undefined;
+                    }
+                    currentEnv.TL_ID = tl_id;
+                }
+                server.env = currentEnv;
+            }
+            return server;
+        }
+    }));
+    // console.log('SBHacks12 extension is now active!');
+    // // Register command to start the server
+    // const startServerCommand = vscode.commands.registerCommand('sbhacks12.startServer', async () => {
+    //     await startLanguageServer(context);
+    // });
+    // // Register command to stop the server
+    // const stopServerCommand = vscode.commands.registerCommand('sbhacks12.stopServer', async () => {
+    //     await stopLanguageServer();
+    // });
+    // context.subscriptions.push(startServerCommand, stopServerCommand);
+    // // Auto-start the language server
+    // startLanguageServer(context);
 }
 function getPythonPath(extensionPath) {
     // Check for uv virtual environment first
@@ -118,9 +136,7 @@ function getPythonPath(extensionPath) {
     return venvPython;
 }
 function deactivate() {
-    if (!client) {
-        return undefined;
-    }
-    return client.stop();
+    // Nothing to clean up - MCP servers are managed by VS Code
+    return undefined;
 }
 //# sourceMappingURL=extension.js.map
